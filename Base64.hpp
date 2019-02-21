@@ -65,10 +65,9 @@ namespace base64 {
     //--------------------------------------------------------------------------------------------------------
     //--------------------------------------------------------------------------------------------------------
 
-    template <typename TQuadCallback, typename TByteCallback>
+    template <typename TByteCallback>
     void encode_callbacks(
         const std::string_view& data,
-        TQuadCallback quad_callback,
         TByteCallback byte_callback,
         bool padded = true
     ) {
@@ -80,12 +79,10 @@ namespace base64 {
             uint8_t b1 = static_cast<uint8_t>(data[i+1]);
             uint8_t b2 = static_cast<uint8_t>(data[i+2]);
 
-            uint32_t quad = static_cast<uint32_t>(detail::Base64LUT[b0 >> 2]);
-            quad |= static_cast<uint32_t>(detail::Base64LUT[(b0 & 0x03) << 4 | b1 >> 4]) << 8;
-            quad |= static_cast<uint32_t>(detail::Base64LUT[(b1 & 0x0F) << 2 | b2 >> 6]) << 16;
-            quad |= static_cast<uint32_t>(detail::Base64LUT[b2 & 0x3F]) << 24;
-
-            quad_callback(quad);
+			byte_callback(detail::Base64LUT[b0 >> 2]);
+			byte_callback(detail::Base64LUT[(b0 & 0x03) << 4 | b1 >> 4]);
+			byte_callback(detail::Base64LUT[(b1 & 0x0F) << 2 | b2 >> 6]);
+			byte_callback(detail::Base64LUT[b2 & 0x3F]);
         }
 
         size_t remainder = data.size() - octet_end;
@@ -116,21 +113,22 @@ namespace base64 {
     //--------------------------------------------------------------------------------------------------------
 
     inline std::string encode_to_string(const std::string_view& data, bool padded = true) {
-        std::string buf;
-        buf.reserve(get_base64_length(data.size(), padded));
+        std::string str(
+			get_base64_length(data.size(), padded),
+			'='
+		);
+
+		auto str_ptr = str.data();
 
         encode_callbacks(
             data,
-            [&](uint32_t value) {
-                buf.append(reinterpret_cast<char*>(&value), 4);
-            },
             [&](uint8_t value) {
-                buf.append(1, static_cast<char>(value));
+                *str_ptr++ = static_cast<char>(value);
             },
             padded
         );
 
-        return buf;
+        return str;
     }
 
     //--------------------------------------------------------------------------------------------------------
@@ -143,10 +141,6 @@ namespace base64 {
 
         encode_callbacks(
             data,
-            [&](uint32_t value) {
-                *reinterpret_cast<uint32_t*>(buf_ptr) = value;
-                buf_ptr += 4;
-            },
             [&](uint8_t value) {
                 *buf_ptr++ = value;
             },
@@ -160,11 +154,10 @@ namespace base64 {
     //--------------------------------------------------------------------------------------------------------
     //--------------------------------------------------------------------------------------------------------
 
-    template <typename TTripleCallback, typename TByteCallback>
+    template <typename TByteCallback>
     void decode(
         const std::string_view& data,
-        TTripleCallback triple_callback,
-        [[maybe_unused]] TByteCallback byte_callback
+        TByteCallback byte_callback
     ) {
         size_t binary_length = get_binary_length(data);
         size_t octet_count = binary_length / 3;
@@ -176,11 +169,9 @@ namespace base64 {
             uint8_t b2 = detail::Base64InverseLUT[data[i+2]];
             uint8_t b3 = detail::Base64InverseLUT[data[i+3]];
 
-            uint8_t c0 = b0 << 2 | b1 >> 4;
-            uint8_t c1 = b1 << 4 | b2 >> 2;
-            uint8_t c2 = b2 << 6 | b3;
-
-            triple_callback(c0, c1, c2);
+            byte_callback(b0 << 2 | b1 >> 4);
+            byte_callback(b1 << 4 | b2 >> 2);
+            byte_callback(b2 << 6 | b3);
         }
 
         size_t remainder = binary_length - (octet_count * 3);
@@ -203,18 +194,13 @@ namespace base64 {
     //--------------------------------------------------------------------------------------------------------
 
     inline std::string decode_to_string(const std::string_view& data) {
-        std::string str;
-        str.reserve(get_binary_length(data));
+        std::string str(get_binary_length(data), '\0');
+		auto str_ptr = str.data();
 
         decode(
             data,
-            [&](uint8_t b0, uint8_t b1, uint8_t b2) {
-                str.append(1, b0);
-                str.append(1, b1);
-                str.append(1, b2);
-            },
             [&](uint8_t b) {
-                str.append(1, b);
+                *str_ptr++ = static_cast<char>(b);
             }
         );
 
@@ -231,12 +217,6 @@ namespace base64 {
 
         decode(
             data,
-            [&](uint8_t b0, uint8_t b1, uint8_t b2) {
-                buf_ptr[0] = b0;
-                buf_ptr[1] = b1;
-                buf_ptr[2] = b2;
-                buf_ptr += 3;
-            },
             [&](uint8_t b) {
                 *buf_ptr++ = b;
             }
