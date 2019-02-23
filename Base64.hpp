@@ -75,9 +75,9 @@ namespace base64 {
 
         size_t octet_end = (octet_count * 3);
         for (size_t i = 0; i < octet_end; i += 3) {
-            uint8_t b0 = static_cast<uint8_t>(data[i  ]);
-            uint8_t b1 = static_cast<uint8_t>(data[i+1]);
-            uint8_t b2 = static_cast<uint8_t>(data[i+2]);
+            char b0 = data[i  ];
+            char b1 = data[i+1];
+            char b2 = data[i+2];
 
 			byte_callback(detail::Base64LUT[b0 >> 2]);
 			byte_callback(detail::Base64LUT[(b0 & 0x03) << 4 | b1 >> 4]);
