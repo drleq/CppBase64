@@ -1,5 +1,6 @@
 #pragma once
 
+#include <array>
 #include <cstdint>
 #include <string_view>
 #include <vector>
@@ -31,11 +32,12 @@ namespace base64 {
     //--------------------------------------------------------------------------------------------------------
 
     inline size_t get_base64_length(size_t binary_length, bool padded = true) {
-        if (padded) {
-            return (binary_length + 2) / 3 * 4;
-        } else {
-            return ((binary_length / 3) * 4) + (binary_length % 3);
+        size_t length = (binary_length + 2) / 3 * 4;
+        size_t remainder = (binary_length % 3);
+        if (!padded && remainder != 0) {
+            length -= 3 - remainder;
         }
+        return length;
     }
 
     inline size_t get_binary_length(const std::string_view& data) {
@@ -66,7 +68,7 @@ namespace base64 {
     //--------------------------------------------------------------------------------------------------------
 
     template <typename TByteCallback>
-    void encode_callbacks(
+    void encode(
         const std::string_view& data,
         TByteCallback byte_callback,
         bool padded = true
@@ -120,7 +122,7 @@ namespace base64 {
 
 		auto str_ptr = str.data();
 
-        encode_callbacks(
+        encode(
             data,
             [&](uint8_t value) {
                 *str_ptr++ = static_cast<char>(value);
@@ -139,7 +141,7 @@ namespace base64 {
 
         auto buf_ptr = buf.data();
 
-        encode_callbacks(
+        encode(
             data,
             [&](uint8_t value) {
                 *buf_ptr++ = value;
@@ -209,7 +211,7 @@ namespace base64 {
 
     //--------------------------------------------------------------------------------------------------------
 
-    inline std::vector<uint8_t> decode_to_vector(const std::string_view& data) {
+    inline std::vector<uint8_t> decode_to_byte_vector(const std::string_view& data) {
         std::vector<uint8_t> buf;
         buf.resize(get_binary_length(data));
 
