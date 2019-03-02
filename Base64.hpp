@@ -42,7 +42,7 @@ namespace base64 {
     //--------------------------------------------------------------------------------------------------------
 
     // Helper to determine the size of an encoded base64 buffer.
-    inline size_t get_base64_length(size_t binary_length, bool padded = true) {
+    inline size_t get_encoded_length(size_t binary_length, bool padded = true) {
         if (padded) {
             return (binary_length + 2) / 3 * 4;
         } else {
@@ -56,7 +56,7 @@ namespace base64 {
     }
 
     // Helper to determine the size of a decoded binary buffer, given the source base64 data.
-    inline size_t get_binary_length(const uint8_t* data, const size_t data_length) {
+    inline size_t get_decoded_length(const uint8_t* data, const size_t data_length) {
         if (data_length == 0) {
             return 0;
         }
@@ -92,7 +92,7 @@ namespace base64 {
         const size_t dest_data_length,
         bool padded = true
     ) {
-        if (get_base64_length(source_data_length, padded) != dest_data_length) {
+        if (get_encoded_length(source_data_length, padded) != dest_data_length) {
             throw std::logic_error("Dest buffer is incorrect size");
         }
 
@@ -203,7 +203,7 @@ namespace base64 {
         const size_t dest_data_length,
         bool padded = true
     ) {
-        if (get_base64_length(source_data_length, padded) != dest_data_length) {
+        if (get_encoded_length(source_data_length, padded) != dest_data_length) {
             throw std::logic_error("Dest buffer is incorrect size");
         }
 
@@ -259,7 +259,7 @@ namespace base64 {
         bool padded = true
     ) {
         std::string str(
-            get_base64_length(source_data_length, padded),
+            get_encoded_length(source_data_length, padded),
             '='
         );
 
@@ -284,7 +284,7 @@ namespace base64 {
         bool padded = true
     ) {
         std::vector<uint8_t> buf;
-        buf.resize(get_base64_length(source_data_length, padded));
+        buf.resize(get_encoded_length(source_data_length, padded));
 
         encode(
             source_data,
@@ -309,7 +309,7 @@ namespace base64 {
         uint8_t* dest_data,
         const size_t dest_data_length
     ) {
-        size_t binary_length = get_binary_length(source_data, source_data_length);
+        size_t binary_length = get_decoded_length(source_data, source_data_length);
         if (binary_length != dest_data_length) {
             throw std::logic_error("Dest buffer is incorrect size");
         }
@@ -411,7 +411,7 @@ namespace base64 {
         uint8_t* dest_data,
         const size_t dest_data_length
     ) {
-        size_t binary_length = get_binary_length(source_data, source_data_length);
+        size_t binary_length = get_decoded_length(source_data, source_data_length);
         if (binary_length != dest_data_length) {
             throw std::logic_error("Dest buffer is incorrect size");
         }
@@ -458,7 +458,7 @@ namespace base64 {
         const uint8_t* source_data,
         const size_t source_data_length
     ) {
-        std::string str(get_binary_length(source_data, source_data_length), '\0');
+        std::string str(get_decoded_length(source_data, source_data_length), '\0');
 
         decode(
             source_data,
@@ -479,7 +479,7 @@ namespace base64 {
         const size_t source_data_length
     ) {
         std::vector<uint8_t> buf;
-        buf.resize(get_binary_length(source_data, source_data_length));
+        buf.resize(get_decoded_length(source_data, source_data_length));
 
         decode(
             source_data,
