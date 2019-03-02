@@ -101,10 +101,10 @@ namespace base64 {
             char b1 = source_data[i+1];
             char b2 = source_data[i+2];
 
-			dest_ptr[0] = detail::Base64LUT[b0 >> 2];
-			dest_ptr[1] = detail::Base64LUT[(b0 & 0x03) << 4 | b1 >> 4];
-			dest_ptr[2] = detail::Base64LUT[(b1 & 0x0F) << 2 | b2 >> 6];
-			dest_ptr[3] = detail::Base64LUT[b2 & 0x3F];
+            dest_ptr[0] = detail::Base64LUT[b0 >> 2];
+            dest_ptr[1] = detail::Base64LUT[(b0 & 0x03) << 4 | b1 >> 4];
+            dest_ptr[2] = detail::Base64LUT[(b1 & 0x0F) << 2 | b2 >> 6];
+            dest_ptr[3] = detail::Base64LUT[b2 & 0x3F];
         }
 
         // Handle the remaining values separately to avoid branches the main loop.
@@ -142,9 +142,9 @@ namespace base64 {
         bool padded = true
     ) {
         std::string str(
-			get_base64_length(source_data_length, padded),
-			'='
-		);
+            get_base64_length(source_data_length, padded),
+            '='
+        );
 
         encode(
             source_data,
