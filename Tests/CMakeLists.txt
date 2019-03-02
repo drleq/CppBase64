@@ -39,6 +39,7 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 # Add source files to executable
 add_executable(Tests
     Base64Test.cpp
+    Base64SSSE3Test.cpp
     main.cpp
     ../Base64.hpp)
 

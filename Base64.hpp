@@ -5,6 +5,10 @@
 #include <string_view>
 #include <vector>
 
+#ifdef BASE64_USE_SSSE3
+#include <tmmintrin.h>
+#endif
+
 namespace base64 {
 
     namespace detail {
@@ -79,6 +83,118 @@ namespace base64 {
     //--------------------------------------------------------------------------------------------------------
     //--------------------------------------------------------------------------------------------------------
 
+#ifdef BASE64_USE_SSSE3
+    // Primary base64 encoding method.  Asserts that the destination buffer is _exactly_ the required size.
+    inline void encode(
+        const uint8_t* source_data,
+        const size_t source_data_length,
+        uint8_t* dest_data,
+        const size_t dest_data_length,
+        bool padded = true
+    ) {
+        if (get_base64_length(source_data_length, padded) != dest_data_length) {
+            throw std::logic_error("Dest buffer is incorrect size");
+        }
+
+        size_t loop_count = (source_data_length / 12);
+        size_t loop_end = (loop_count * 12);
+        auto dest_ptr = dest_data;
+
+        // Code based on work by Wojciech Muła
+        // Ref: http://0x80.pl/notesen/2016-01-12-sse-base64-encoding.html
+        const __m128i preshuffle_128 = _mm_set_epi8(10, 11, 9, 10, 7, 8, 6, 7, 4, 5, 3, 4, 1, 2, 0, 1);
+        const __m128i t0Mask   = _mm_set_epi32(0x0fc0fc00, 0x0fc0fc00, 0x0fc0fc00, 0x0fc0fc00);
+        const __m128i t1Values = _mm_set_epi32(0x04000040, 0x04000040, 0x04000040, 0x04000040);
+        const __m128i t2Mask   = _mm_set_epi32(0x003f03f0, 0x003f03f0, 0x003f03f0, 0x003f03f0);
+        const __m128i t3Values = _mm_set_epi32(0x01000010, 0x01000010, 0x01000010, 0x01000010);
+        const __m128i _51_128  = _mm_set_epi32(0x33333333, 0x33333333, 0x33333333, 0x33333333);
+        const __m128i _26_128  = _mm_set_epi32(0x1a1a1a1a, 0x1a1a1a1a, 0x1a1a1a1a, 0x1a1a1a1a);
+        const __m128i _13_128  = _mm_set_epi32(0x0d0d0d0d, 0x0d0d0d0d, 0x0d0d0d0d, 0x0d0d0d0d);
+        const __m128i shiftLUT = _mm_setr_epi8(
+            'a' - 26, '0' - 52, '0' - 52, '0' - 52, '0' - 52, '0' - 52,
+            '0' - 52, '0' - 52, '0' - 52, '0' - 52, '0' - 52, '+' - 62,
+            '/' - 63, 'A', 0, 0
+        );
+
+        for (size_t i = 0; i < loop_end; i += 12, dest_ptr += 16) {
+            // Load four sets of octets at once.
+            // [????|dddc|ccbb|baaa]
+            __m128i b = _mm_loadu_si128(reinterpret_cast<const __m128i*>(&source_data[i]));
+            b = _mm_shuffle_epi8(b, preshuffle_128);
+
+            // t0 = [0000cccc|CC000000|aaaaaa00|00000000]
+            // t1 = [00000000|00cccccc|00000000|00aaaaaa]
+            // t2 = [00000000|00dddddd|000000bb|bbbb0000]
+            // t3 = [00dddddd|00000000|00bbbbbb|00000000]
+            // unpacked = [00dddddd|00cccccc|00bbbbbb|00aaaaaa]
+            const __m128i t0 = _mm_and_si128(b, t0Mask);
+            const __m128i t2 = _mm_and_si128(b, t2Mask);
+            const __m128i t1 = _mm_mulhi_epu16(t0, t1Values);
+            const __m128i t3 = _mm_mullo_epi16(t2, t3Values);
+            const __m128i unpacked = _mm_or_si128(t1, t3);
+
+            // Convert to base64 characters without lookup tables
+            const __m128i reduced = _mm_or_si128(
+                _mm_subs_epu8(unpacked, _51_128),
+                _mm_and_si128(
+                    _mm_cmpgt_epi8(_26_128, unpacked),
+                    _13_128
+                )
+            );
+            const __m128i result = _mm_add_epi8(
+                _mm_shuffle_epi8(shiftLUT, reduced),
+                unpacked
+            );
+
+            // Output
+            _mm_storeu_si128(
+                reinterpret_cast<__m128i*>(dest_ptr),
+                result
+            );
+        }
+
+        size_t remainder = source_data_length - loop_end;
+        size_t octet_count = (remainder / 3);
+        size_t octet_end = loop_end + (octet_count * 3);
+
+        // Process three source values at a time.
+        for (size_t i = loop_end; i < octet_end; i += 3, dest_ptr += 4) {
+            char b0 = source_data[i  ];
+            char b1 = source_data[i+1];
+            char b2 = source_data[i+2];
+
+            dest_ptr[0] = detail::Base64LUT[b0 >> 2];
+            dest_ptr[1] = detail::Base64LUT[(b0 & 0x03) << 4 | b1 >> 4];
+            dest_ptr[2] = detail::Base64LUT[(b1 & 0x0F) << 2 | b2 >> 6];
+            dest_ptr[3] = detail::Base64LUT[b2 & 0x3F];
+        }
+
+        // Handle the remaining values separately to avoid branches the main loop.
+        remainder = source_data_length - octet_end;
+        if (remainder == 2) {
+            uint8_t b0 = source_data[octet_end  ];
+            uint8_t b1 = source_data[octet_end+1];
+
+            dest_ptr[0] = detail::Base64LUT[b0 >> 2];
+            dest_ptr[1] = detail::Base64LUT[(b0 & 0x03) << 4 | b1 >> 4];
+            dest_ptr[2] = detail::Base64LUT[(b1 & 0x0F) << 2];
+            if (padded) {
+                dest_ptr[3] = '=';
+            }
+
+        } else if (remainder == 1) {
+            uint8_t b0 = source_data[octet_end];
+            
+            dest_ptr[0] = detail::Base64LUT[b0 >> 2];
+            dest_ptr[1] = detail::Base64LUT[(b0 & 0x03) << 4];
+
+            if (padded) {
+                dest_ptr[2] = '=';
+                dest_ptr[3] = '=';
+            }
+        }
+    }
+#else
     // Primary base64 encoding method.  Asserts that the destination buffer is _exactly_ the required size.
     inline void encode(
         const uint8_t* source_data,
@@ -132,6 +248,7 @@ namespace base64 {
             }
         } 
     }
+#endif
 
     //--------------------------------------------------------------------------------------------------------
 
@@ -184,6 +301,109 @@ namespace base64 {
     //--------------------------------------------------------------------------------------------------------
     //--------------------------------------------------------------------------------------------------------
 
+#ifdef BASE64_USE_SSSE3
+    // Primary base64 decoding method.  Asserts that the destination buffer is _exactly_ the required size.
+    inline void decode(
+        const uint8_t* source_data,
+        const size_t source_data_length,
+        uint8_t* dest_data,
+        const size_t dest_data_length
+    ) {
+        size_t binary_length = get_binary_length(source_data, source_data_length);
+        if (binary_length != dest_data_length) {
+            throw std::logic_error("Dest buffer is incorrect size");
+        }
+
+        size_t loop_count = (source_data_length / 16);
+        size_t loop_end = (loop_count * 16);
+        auto dest_ptr = dest_data;
+
+        // Code based on work by Wojciech Muła
+        // Ref: http://0x80.pl/notesen/2016-01-17-sse-base64-decoding.html
+        const __m128i _0f_128 = _mm_set1_epi8(0x0f);
+        const __m128i _2f_128 = _mm_set1_epi8(0x2f);
+        const __m128i _n3_128 = _mm_set1_epi8(-3);
+        const __m128i lower_bound_LUT = _mm_setr_epi8(1, 1, 0x2b, 0x30, 0x41, 0x50, 0x61, 0x70, 1, 1, 1, 1, 1, 1, 1, 1);
+        const __m128i upper_bound_LUT = _mm_setr_epi8(0, 0, 0x2b, 0x39, 0x4f, 0x5a, 0x6f, 0x7a, 0, 0, 0, 0, 0, 0, 0, 0);
+        const __m128i shiftLUT = _mm_setr_epi8(
+            /* 0 */ 0x00,        /* 1 */ 0x00,        /* 2 */ 0x3e - 0x2b, /* 3 */ 0x34 - 0x30,
+            /* 4 */ 0x00 - 0x41, /* 5 */ 0x0f - 0x50, /* 6 */ 0x1a - 0x61, /* 7 */ 0x29 - 0x70,
+            /* 8 */ 0x00,        /* 9 */ 0x00,        /* a */ 0x00,        /* b */ 0x00,
+            /* c */ 0x00,        /* d */ 0x00,        /* e */ 0x00,        /* f */ 0x00
+        );
+        const __m128i packValues1 = _mm_set_epi32(0x01400140, 0x01400140, 0x01400140, 0x01400140);
+        const __m128i packValues2 = _mm_set_epi32(0x00011000, 0x00011000, 0x00011000, 0x00011000);
+        const __m128i unshuffle_128 = _mm_setr_epi8(2, 1, 0, 6, 5, 4, 10, 9, 8, 14, 13, 12, -1, -1, -1, -1);
+        const __m128i write_mask_128 = _mm_set_epi32(0x00000000, 0xffffffff, 0xffffffff, 0xffffffff);
+
+        for (size_t i = 0; i < loop_end; i += 16, dest_ptr += 12) {
+            // Load four sets of octets at once.
+            __m128i b = _mm_loadu_si128(reinterpret_cast<const __m128i*>(&source_data[i]));
+
+            // Base64 characters -> 6-bit unpacked
+            const __m128i higher_nibble = _mm_and_si128(_mm_srli_epi32(b, 4), _0f_128);
+            const __m128i upper_bound = _mm_shuffle_epi8(upper_bound_LUT, higher_nibble);
+            const __m128i lower_bound = _mm_shuffle_epi8(lower_bound_LUT, higher_nibble);
+
+            const __m128i below = _mm_cmplt_epi8(b, lower_bound);
+            const __m128i above = _mm_cmpgt_epi8(b, upper_bound);
+            const __m128i eq_2f = _mm_cmpeq_epi8(b, _2f_128);
+
+            const __m128i shift  = _mm_shuffle_epi8(shiftLUT, higher_nibble);
+            const __m128i t0     = _mm_add_epi8(b, shift);
+            const __m128i unpacked = _mm_add_epi8(t0, _mm_and_si128(eq_2f, _n3_128));
+
+            // 6-bit unpacked -> 8-bit packed
+            const __m128i packed = _mm_madd_epi16(
+                _mm_maddubs_epi16(unpacked, packValues1),
+                packValues2
+            );
+
+            // 8-bit packed -> original order
+            const __m128i unshuffled = _mm_shuffle_epi8(packed, unshuffle_128);
+
+			// Output
+            _mm_maskmoveu_si128(
+				unshuffled,
+                write_mask_128,
+                reinterpret_cast<char*>(dest_ptr)
+            );
+        }
+
+        size_t binary_remainder = binary_length - (loop_count * 12);
+        size_t octet_count = binary_remainder / 3;
+        size_t octet_end = loop_end + (octet_count * 4);
+
+        // Process four source values at a time.
+        for (size_t i = loop_end; i < octet_end; i += 4, dest_ptr += 3) {
+            uint8_t b0 = detail::Base64InverseLUT[source_data[i  ]];
+            uint8_t b1 = detail::Base64InverseLUT[source_data[i+1]];
+            uint8_t b2 = detail::Base64InverseLUT[source_data[i+2]];
+            uint8_t b3 = detail::Base64InverseLUT[source_data[i+3]];
+
+            dest_ptr[0] = b0 << 2 | b1 >> 4;
+            dest_ptr[1] = b1 << 4 | b2 >> 2;
+            dest_ptr[2] = b2 << 6 | b3;
+        }
+
+        // Handle the remaining values separately to avoid branches the main loop.
+		binary_remainder -= (octet_count * 3);
+        if (binary_remainder == 2) {
+            uint8_t b0 = detail::Base64InverseLUT[source_data[octet_end  ]];
+            uint8_t b1 = detail::Base64InverseLUT[source_data[octet_end+1]];
+            uint8_t b2 = detail::Base64InverseLUT[source_data[octet_end+2]];
+
+            dest_ptr[0] = b0 << 2 | b1 >> 4;
+            dest_ptr[1] = b1 << 4 | b2 >> 2;
+
+        } else if (binary_remainder == 1) {
+            uint8_t b0 = detail::Base64InverseLUT[source_data[octet_end  ]];
+            uint8_t b1 = detail::Base64InverseLUT[source_data[octet_end+1]];
+
+            dest_ptr[0] = b0 << 2 | b1 >> 4;
+        }
+    }
+#else
     // Primary base64 decoding method.  Asserts that the destination buffer is _exactly_ the required size.
     inline void decode(
         const uint8_t* source_data,
@@ -229,6 +449,7 @@ namespace base64 {
             dest_ptr[0] = b0 << 2 | b1 >> 4;
         }
     }
+#endif
 
     //--------------------------------------------------------------------------------------------------------
 
