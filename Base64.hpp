@@ -1,5 +1,6 @@
 #pragma once
 
+#include <array>
 #include <cstdint>
 #include <string_view>
 #include <vector>
@@ -7,7 +8,11 @@
 namespace base64 {
 
     namespace detail {
+        // Static look-up table for 6-bit values to 8-bit base64 characters.  All values are valid.
         constexpr std::string_view Base64LUT{ "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/" };
+
+        // Static look-up table for 8-bit base64 characters to 6-bit values.  Invalid values are forced to
+        // zero (i.e. no validation).
         constexpr std::array<uint8_t, 256> Base64InverseLUT = {
              0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0, // 0x00 - 0x0F
              0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0, // 0x10 - 0x1F
@@ -29,32 +34,41 @@ namespace base64 {
     }
 
     //--------------------------------------------------------------------------------------------------------
+    //--------------------------------------------------------------------------------------------------------
+    //--------------------------------------------------------------------------------------------------------
 
+    // Helper to determine the size of an encoded base64 buffer.
     inline size_t get_base64_length(size_t binary_length, bool padded = true) {
         if (padded) {
             return (binary_length + 2) / 3 * 4;
         } else {
-            return ((binary_length / 3) * 4) + (binary_length % 3);
+            size_t remainder = binary_length % 3;
+            size_t length = (binary_length / 3) * 4;
+            if (remainder) {
+                length += remainder + 1;
+            }
+            return length;
         }
     }
 
-    inline size_t get_binary_length(const std::string_view& data) {
-        if (data.empty()) {
+    // Helper to determine the size of a decoded binary buffer, given the source base64 data.
+    inline size_t get_binary_length(const uint8_t* data, const size_t data_length) {
+        if (data_length == 0) {
             return 0;
         }
 
-        size_t octet_count = data.size() / 4;
-        size_t remainder = data.size() - (octet_count * 4);
+        size_t octet_count = data_length / 4;
+        size_t remainder = data_length % 4;
         if (remainder != 0) {
             // Unpadded data
-            return octet_count + (remainder - 1);
+            return (octet_count * 3) + (remainder - 1);
         }
 
         // Either binary % 3 == 0 || padded 
         octet_count *= 3;
-        if (data[data.size()-2] == '=') {
+        if (data[data_length-2] == '=') {
             return octet_count - 2;
-        } else if (data.back() == '=') {
+        } else if (data[data_length-1] == '=') {
             return octet_count - 1;
         }
 
@@ -65,66 +79,78 @@ namespace base64 {
     //--------------------------------------------------------------------------------------------------------
     //--------------------------------------------------------------------------------------------------------
 
-    template <typename TByteCallback>
-    void encode_callbacks(
-        const std::string_view& data,
-        TByteCallback byte_callback,
+    // Primary base64 encoding method.  Asserts that the destination buffer is _exactly_ the required size.
+    inline void encode(
+        const uint8_t* source_data,
+        const size_t source_data_length,
+        uint8_t* dest_data,
+        const size_t dest_data_length,
         bool padded = true
     ) {
-        size_t octet_count = (data.size() / 3);
-
-        size_t octet_end = (octet_count * 3);
-        for (size_t i = 0; i < octet_end; i += 3) {
-            char b0 = data[i  ];
-            char b1 = data[i+1];
-            char b2 = data[i+2];
-
-			byte_callback(detail::Base64LUT[b0 >> 2]);
-			byte_callback(detail::Base64LUT[(b0 & 0x03) << 4 | b1 >> 4]);
-			byte_callback(detail::Base64LUT[(b1 & 0x0F) << 2 | b2 >> 6]);
-			byte_callback(detail::Base64LUT[b2 & 0x3F]);
+        if (get_base64_length(source_data_length, padded) != dest_data_length) {
+            throw std::logic_error("Dest buffer is incorrect size");
         }
 
-        size_t remainder = data.size() - octet_end;
-        if (remainder == 2) {
-            uint8_t b0 = static_cast<uint8_t>(data[octet_end  ]);
-            uint8_t b1 = static_cast<uint8_t>(data[octet_end+1]);
+        size_t octet_count = (source_data_length / 3);
+        size_t octet_end = (octet_count * 3);
+        auto dest_ptr = dest_data;
 
-            byte_callback(detail::Base64LUT[b0 >> 2]);
-            byte_callback(detail::Base64LUT[(b0 & 0x03) << 4 | b1 >> 4]);
-            byte_callback(detail::Base64LUT[(b1 & 0x0F) << 2]);
+        // Process three source values at a time.
+        for (size_t i = 0; i < octet_end; i += 3, dest_ptr += 4) {
+            char b0 = source_data[i  ];
+            char b1 = source_data[i+1];
+            char b2 = source_data[i+2];
+
+			dest_ptr[0] = detail::Base64LUT[b0 >> 2];
+			dest_ptr[1] = detail::Base64LUT[(b0 & 0x03) << 4 | b1 >> 4];
+			dest_ptr[2] = detail::Base64LUT[(b1 & 0x0F) << 2 | b2 >> 6];
+			dest_ptr[3] = detail::Base64LUT[b2 & 0x3F];
+        }
+
+        // Handle the remaining values separately to avoid branches the main loop.
+        size_t remainder = source_data_length - octet_end;
+        if (remainder == 2) {
+            uint8_t b0 = source_data[octet_end  ];
+            uint8_t b1 = source_data[octet_end+1];
+
+            dest_ptr[0] = detail::Base64LUT[b0 >> 2];
+            dest_ptr[1] = detail::Base64LUT[(b0 & 0x03) << 4 | b1 >> 4];
+            dest_ptr[2] = detail::Base64LUT[(b1 & 0x0F) << 2];
             if (padded) {
-                byte_callback('=');
+                dest_ptr[3] = '=';
             }
 
         } else if (remainder == 1) {
-            uint8_t b0 = static_cast<uint8_t>(data[octet_end]);
+            uint8_t b0 = source_data[octet_end];
             
-            byte_callback(detail::Base64LUT[b0 >> 2]);
-            byte_callback(detail::Base64LUT[(b0 & 0x03) << 4]);
+            dest_ptr[0] = detail::Base64LUT[b0 >> 2];
+            dest_ptr[1] = detail::Base64LUT[(b0 & 0x03) << 4];
 
             if (padded) {
-                byte_callback('=');
-                byte_callback('=');
+                dest_ptr[2] = '=';
+                dest_ptr[3] = '=';
             }
         } 
     }
 
     //--------------------------------------------------------------------------------------------------------
 
-    inline std::string encode_to_string(const std::string_view& data, bool padded = true) {
+    // Helper to encode directly to a std::string.
+    inline std::string encode_to_string(
+        const uint8_t* source_data,
+        const size_t source_data_length,
+        bool padded = true
+    ) {
         std::string str(
-			get_base64_length(data.size(), padded),
+			get_base64_length(source_data_length, padded),
 			'='
 		);
 
-		auto str_ptr = str.data();
-
-        encode_callbacks(
-            data,
-            [&](uint8_t value) {
-                *str_ptr++ = static_cast<char>(value);
-            },
+        encode(
+            source_data,
+            source_data_length,
+            reinterpret_cast<uint8_t*>(str.data()),
+            str.size(),
             padded
         );
 
@@ -133,17 +159,21 @@ namespace base64 {
 
     //--------------------------------------------------------------------------------------------------------
 
-    inline std::vector<uint8_t> encode_to_byte_vector(const std::string_view& data, bool padded = true) {
+    // Helper to encode directly to a std::vector.  This is slightly faster than std::string as it doesn't
+    // need to initialize the buffer before encoding.
+    inline std::vector<uint8_t> encode_to_byte_vector(
+        const uint8_t* source_data,
+        const size_t source_data_length,
+        bool padded = true
+    ) {
         std::vector<uint8_t> buf;
-        buf.resize(get_base64_length(data.size(), padded));
+        buf.resize(get_base64_length(source_data_length, padded));
 
-        auto buf_ptr = buf.data();
-
-        encode_callbacks(
-            data,
-            [&](uint8_t value) {
-                *buf_ptr++ = value;
-            },
+        encode(
+            source_data,
+            source_data_length,
+            buf.data(),
+            buf.size(),
             padded
         );
 
@@ -154,54 +184,66 @@ namespace base64 {
     //--------------------------------------------------------------------------------------------------------
     //--------------------------------------------------------------------------------------------------------
 
-    template <typename TByteCallback>
-    void decode(
-        const std::string_view& data,
-        TByteCallback byte_callback
+    // Primary base64 decoding method.  Asserts that the destination buffer is _exactly_ the required size.
+    inline void decode(
+        const uint8_t* source_data,
+        const size_t source_data_length,
+        uint8_t* dest_data,
+        const size_t dest_data_length
     ) {
-        size_t binary_length = get_binary_length(data);
-        size_t octet_count = binary_length / 3;
-
-        size_t octet_end = (octet_count * 4);
-        for (size_t i = 0; i < octet_end; i += 4) {
-            uint8_t b0 = detail::Base64InverseLUT[data[i  ]];
-            uint8_t b1 = detail::Base64InverseLUT[data[i+1]];
-            uint8_t b2 = detail::Base64InverseLUT[data[i+2]];
-            uint8_t b3 = detail::Base64InverseLUT[data[i+3]];
-
-            byte_callback(b0 << 2 | b1 >> 4);
-            byte_callback(b1 << 4 | b2 >> 2);
-            byte_callback(b2 << 6 | b3);
+        size_t binary_length = get_binary_length(source_data, source_data_length);
+        if (binary_length != dest_data_length) {
+            throw std::logic_error("Dest buffer is incorrect size");
         }
 
+        size_t octet_count = binary_length / 3;
+        size_t octet_end = (octet_count * 4);
+        auto dest_ptr = dest_data;
+
+        // Process four source values at a time.
+        for (size_t i = 0; i < octet_end; i += 4, dest_ptr += 3) {
+            uint8_t b0 = detail::Base64InverseLUT[source_data[i  ]];
+            uint8_t b1 = detail::Base64InverseLUT[source_data[i+1]];
+            uint8_t b2 = detail::Base64InverseLUT[source_data[i+2]];
+            uint8_t b3 = detail::Base64InverseLUT[source_data[i+3]];
+
+            dest_ptr[0] = b0 << 2 | b1 >> 4;
+            dest_ptr[1] = b1 << 4 | b2 >> 2;
+            dest_ptr[2] = b2 << 6 | b3;
+        }
+
+        // Handle the remaining values separately to avoid branches the main loop.
         size_t remainder = binary_length - (octet_count * 3);
         if (remainder == 2) {
-            uint8_t b0 = detail::Base64InverseLUT[data[octet_end  ]];
-            uint8_t b1 = detail::Base64InverseLUT[data[octet_end+1]];
-            uint8_t b2 = detail::Base64InverseLUT[data[octet_end+2]];
+            uint8_t b0 = detail::Base64InverseLUT[source_data[octet_end  ]];
+            uint8_t b1 = detail::Base64InverseLUT[source_data[octet_end+1]];
+            uint8_t b2 = detail::Base64InverseLUT[source_data[octet_end+2]];
 
-            byte_callback(b0 << 2 | b1 >> 4);
-            byte_callback(b1 << 4 | b2 >> 2);
+            dest_ptr[0] = b0 << 2 | b1 >> 4;
+            dest_ptr[1] = b1 << 4 | b2 >> 2;
 
         } else if (remainder == 1) {
-            uint8_t b0 = detail::Base64InverseLUT[data[octet_end  ]];
-            uint8_t b1 = detail::Base64InverseLUT[data[octet_end+1]];
+            uint8_t b0 = detail::Base64InverseLUT[source_data[octet_end  ]];
+            uint8_t b1 = detail::Base64InverseLUT[source_data[octet_end+1]];
 
-            byte_callback(b0 << 2 | b1 >> 4);
+            dest_ptr[0] = b0 << 2 | b1 >> 4;
         }
     }
 
     //--------------------------------------------------------------------------------------------------------
 
-    inline std::string decode_to_string(const std::string_view& data) {
-        std::string str(get_binary_length(data), '\0');
-		auto str_ptr = str.data();
+    // Helper to decode directly to a std::string.
+    inline std::string decode_to_string(
+        const uint8_t* source_data,
+        const size_t source_data_length
+    ) {
+        std::string str(get_binary_length(source_data, source_data_length), '\0');
 
         decode(
-            data,
-            [&](uint8_t b) {
-                *str_ptr++ = static_cast<char>(b);
-            }
+            source_data,
+            source_data_length,
+            reinterpret_cast<uint8_t*>(str.data()),
+            str.size()
         );
 
         return str;
@@ -209,17 +251,20 @@ namespace base64 {
 
     //--------------------------------------------------------------------------------------------------------
 
-    inline std::vector<uint8_t> decode_to_vector(const std::string_view& data) {
+    // Helper to decode directly to a std::vector.  This is slightly faster than std::string as it doesn't
+    // need to initialize the buffer before decoding.
+    inline std::vector<uint8_t> decode_to_vector(
+        const uint8_t* source_data,
+        const size_t source_data_length
+    ) {
         std::vector<uint8_t> buf;
-        buf.resize(get_binary_length(data));
-
-        auto buf_ptr = buf.data();
+        buf.resize(get_binary_length(source_data, source_data_length));
 
         decode(
-            data,
-            [&](uint8_t b) {
-                *buf_ptr++ = b;
-            }
+            source_data,
+            source_data_length,
+            buf.data(),
+            buf.size()
         );
 
         return buf;
