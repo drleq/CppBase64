@@ -100,57 +100,59 @@ namespace base64 {
         size_t loop_end = (loop_count * 12);
         auto dest_ptr = dest_data;
 
-        // Code based on work by Wojciech Muła
-        // Ref: http://0x80.pl/notesen/2016-01-12-sse-base64-encoding.html
-        const __m128i preshuffle_128 = _mm_set_epi8(10, 11, 9, 10, 7, 8, 6, 7, 4, 5, 3, 4, 1, 2, 0, 1);
-        const __m128i t0Mask   = _mm_set_epi32(0x0fc0fc00, 0x0fc0fc00, 0x0fc0fc00, 0x0fc0fc00);
-        const __m128i t1Values = _mm_set_epi32(0x04000040, 0x04000040, 0x04000040, 0x04000040);
-        const __m128i t2Mask   = _mm_set_epi32(0x003f03f0, 0x003f03f0, 0x003f03f0, 0x003f03f0);
-        const __m128i t3Values = _mm_set_epi32(0x01000010, 0x01000010, 0x01000010, 0x01000010);
-        const __m128i _51_128  = _mm_set_epi32(0x33333333, 0x33333333, 0x33333333, 0x33333333);
-        const __m128i _26_128  = _mm_set_epi32(0x1a1a1a1a, 0x1a1a1a1a, 0x1a1a1a1a, 0x1a1a1a1a);
-        const __m128i _13_128  = _mm_set_epi32(0x0d0d0d0d, 0x0d0d0d0d, 0x0d0d0d0d, 0x0d0d0d0d);
-        const __m128i shiftLUT = _mm_setr_epi8(
-            'a' - 26, '0' - 52, '0' - 52, '0' - 52, '0' - 52, '0' - 52,
-            '0' - 52, '0' - 52, '0' - 52, '0' - 52, '0' - 52, '+' - 62,
-            '/' - 63, 'A', 0, 0
-        );
-
-        for (size_t i = 0; i < loop_end; i += 12, dest_ptr += 16) {
-            // Load four sets of octets at once.
-            // [????|dddc|ccbb|baaa]
-            __m128i b = _mm_loadu_si128(reinterpret_cast<const __m128i*>(&source_data[i]));
-            b = _mm_shuffle_epi8(b, preshuffle_128);
-
-            // t0 = [0000cccc|CC000000|aaaaaa00|00000000]
-            // t1 = [00000000|00cccccc|00000000|00aaaaaa]
-            // t2 = [00000000|00dddddd|000000bb|bbbb0000]
-            // t3 = [00dddddd|00000000|00bbbbbb|00000000]
-            // unpacked = [00dddddd|00cccccc|00bbbbbb|00aaaaaa]
-            const __m128i t0 = _mm_and_si128(b, t0Mask);
-            const __m128i t2 = _mm_and_si128(b, t2Mask);
-            const __m128i t1 = _mm_mulhi_epu16(t0, t1Values);
-            const __m128i t3 = _mm_mullo_epi16(t2, t3Values);
-            const __m128i unpacked = _mm_or_si128(t1, t3);
-
-            // Convert to base64 characters without lookup tables
-            const __m128i reduced = _mm_or_si128(
-                _mm_subs_epu8(unpacked, _51_128),
-                _mm_and_si128(
-                    _mm_cmpgt_epi8(_26_128, unpacked),
-                    _13_128
-                )
-            );
-            const __m128i result = _mm_add_epi8(
-                _mm_shuffle_epi8(shiftLUT, reduced),
-                unpacked
+        if (loop_count > 0) {
+            // Code based on work by Wojciech Muła
+            // Ref: http://0x80.pl/notesen/2016-01-12-sse-base64-encoding.html
+            const __m128i preshuffle_128 = _mm_set_epi8(10, 11, 9, 10, 7, 8, 6, 7, 4, 5, 3, 4, 1, 2, 0, 1);
+            const __m128i t0Mask   = _mm_set_epi32(0x0fc0fc00, 0x0fc0fc00, 0x0fc0fc00, 0x0fc0fc00);
+            const __m128i t1Values = _mm_set_epi32(0x04000040, 0x04000040, 0x04000040, 0x04000040);
+            const __m128i t2Mask   = _mm_set_epi32(0x003f03f0, 0x003f03f0, 0x003f03f0, 0x003f03f0);
+            const __m128i t3Values = _mm_set_epi32(0x01000010, 0x01000010, 0x01000010, 0x01000010);
+            const __m128i _51_128  = _mm_set_epi32(0x33333333, 0x33333333, 0x33333333, 0x33333333);
+            const __m128i _26_128  = _mm_set_epi32(0x1a1a1a1a, 0x1a1a1a1a, 0x1a1a1a1a, 0x1a1a1a1a);
+            const __m128i _13_128  = _mm_set_epi32(0x0d0d0d0d, 0x0d0d0d0d, 0x0d0d0d0d, 0x0d0d0d0d);
+            const __m128i shiftLUT = _mm_setr_epi8(
+                'a' - 26, '0' - 52, '0' - 52, '0' - 52, '0' - 52, '0' - 52,
+                '0' - 52, '0' - 52, '0' - 52, '0' - 52, '0' - 52, '+' - 62,
+                '/' - 63, 'A', 0, 0
             );
 
-            // Output
-            _mm_storeu_si128(
-                reinterpret_cast<__m128i*>(dest_ptr),
-                result
-            );
+            for (size_t i = 0; i < loop_end; i += 12, dest_ptr += 16) {
+                // Load four sets of octets at once.
+                // [????|dddc|ccbb|baaa]
+                __m128i b = _mm_loadu_si128(reinterpret_cast<const __m128i*>(&source_data[i]));
+                b = _mm_shuffle_epi8(b, preshuffle_128);
+
+                // t0 = [0000cccc|CC000000|aaaaaa00|00000000]
+                // t1 = [00000000|00cccccc|00000000|00aaaaaa]
+                // t2 = [00000000|00dddddd|000000bb|bbbb0000]
+                // t3 = [00dddddd|00000000|00bbbbbb|00000000]
+                // unpacked = [00dddddd|00cccccc|00bbbbbb|00aaaaaa]
+                const __m128i t0 = _mm_and_si128(b, t0Mask);
+                const __m128i t2 = _mm_and_si128(b, t2Mask);
+                const __m128i t1 = _mm_mulhi_epu16(t0, t1Values);
+                const __m128i t3 = _mm_mullo_epi16(t2, t3Values);
+                const __m128i unpacked = _mm_or_si128(t1, t3);
+
+                // Convert to base64 characters without lookup tables
+                const __m128i reduced = _mm_or_si128(
+                    _mm_subs_epu8(unpacked, _51_128),
+                    _mm_and_si128(
+                        _mm_cmpgt_epi8(_26_128, unpacked),
+                        _13_128
+                    )
+                );
+                const __m128i result = _mm_add_epi8(
+                    _mm_shuffle_epi8(shiftLUT, reduced),
+                    unpacked
+                );
+
+                // Output
+                _mm_storeu_si128(
+                    reinterpret_cast<__m128i*>(dest_ptr),
+                    result
+                );
+            }
         }
 
         size_t remainder = source_data_length - loop_end;
@@ -318,56 +320,58 @@ namespace base64 {
         size_t loop_end = (loop_count * 16);
         auto dest_ptr = dest_data;
 
-        // Code based on work by Wojciech Muła
-        // Ref: http://0x80.pl/notesen/2016-01-17-sse-base64-decoding.html
-        const __m128i _0f_128 = _mm_set1_epi8(0x0f);
-        const __m128i _2f_128 = _mm_set1_epi8(0x2f);
-        const __m128i _n3_128 = _mm_set1_epi8(-3);
-        const __m128i lower_bound_LUT = _mm_setr_epi8(1, 1, 0x2b, 0x30, 0x41, 0x50, 0x61, 0x70, 1, 1, 1, 1, 1, 1, 1, 1);
-        const __m128i upper_bound_LUT = _mm_setr_epi8(0, 0, 0x2b, 0x39, 0x4f, 0x5a, 0x6f, 0x7a, 0, 0, 0, 0, 0, 0, 0, 0);
-        const __m128i shiftLUT = _mm_setr_epi8(
-            /* 0 */ 0x00,        /* 1 */ 0x00,        /* 2 */ 0x3e - 0x2b, /* 3 */ 0x34 - 0x30,
-            /* 4 */ 0x00 - 0x41, /* 5 */ 0x0f - 0x50, /* 6 */ 0x1a - 0x61, /* 7 */ 0x29 - 0x70,
-            /* 8 */ 0x00,        /* 9 */ 0x00,        /* a */ 0x00,        /* b */ 0x00,
-            /* c */ 0x00,        /* d */ 0x00,        /* e */ 0x00,        /* f */ 0x00
-        );
-        const __m128i packValues1 = _mm_set_epi32(0x01400140, 0x01400140, 0x01400140, 0x01400140);
-        const __m128i packValues2 = _mm_set_epi32(0x00011000, 0x00011000, 0x00011000, 0x00011000);
-        const __m128i unshuffle_128 = _mm_setr_epi8(2, 1, 0, 6, 5, 4, 10, 9, 8, 14, 13, 12, -1, -1, -1, -1);
-        const __m128i write_mask_128 = _mm_set_epi32(0x00000000, 0xffffffff, 0xffffffff, 0xffffffff);
-
-        for (size_t i = 0; i < loop_end; i += 16, dest_ptr += 12) {
-            // Load four sets of octets at once.
-            __m128i b = _mm_loadu_si128(reinterpret_cast<const __m128i*>(&source_data[i]));
-
-            // Base64 characters -> 6-bit unpacked
-            const __m128i higher_nibble = _mm_and_si128(_mm_srli_epi32(b, 4), _0f_128);
-            const __m128i upper_bound = _mm_shuffle_epi8(upper_bound_LUT, higher_nibble);
-            const __m128i lower_bound = _mm_shuffle_epi8(lower_bound_LUT, higher_nibble);
-
-            const __m128i below = _mm_cmplt_epi8(b, lower_bound);
-            const __m128i above = _mm_cmpgt_epi8(b, upper_bound);
-            const __m128i eq_2f = _mm_cmpeq_epi8(b, _2f_128);
-
-            const __m128i shift  = _mm_shuffle_epi8(shiftLUT, higher_nibble);
-            const __m128i t0     = _mm_add_epi8(b, shift);
-            const __m128i unpacked = _mm_add_epi8(t0, _mm_and_si128(eq_2f, _n3_128));
-
-            // 6-bit unpacked -> 8-bit packed
-            const __m128i packed = _mm_madd_epi16(
-                _mm_maddubs_epi16(unpacked, packValues1),
-                packValues2
+        if (loop_count > 0) {
+            // Code based on work by Wojciech Muła
+            // Ref: http://0x80.pl/notesen/2016-01-17-sse-base64-decoding.html
+            const __m128i _0f_128 = _mm_set1_epi8(0x0f);
+            const __m128i _2f_128 = _mm_set1_epi8(0x2f);
+            const __m128i _n3_128 = _mm_set1_epi8(-3);
+            const __m128i lower_bound_LUT = _mm_setr_epi8(1, 1, 0x2b, 0x30, 0x41, 0x50, 0x61, 0x70, 1, 1, 1, 1, 1, 1, 1, 1);
+            const __m128i upper_bound_LUT = _mm_setr_epi8(0, 0, 0x2b, 0x39, 0x4f, 0x5a, 0x6f, 0x7a, 0, 0, 0, 0, 0, 0, 0, 0);
+            const __m128i shiftLUT = _mm_setr_epi8(
+                /* 0 */ 0x00,        /* 1 */ 0x00,        /* 2 */ 0x3e - 0x2b, /* 3 */ 0x34 - 0x30,
+                /* 4 */ 0x00 - 0x41, /* 5 */ 0x0f - 0x50, /* 6 */ 0x1a - 0x61, /* 7 */ 0x29 - 0x70,
+                /* 8 */ 0x00,        /* 9 */ 0x00,        /* a */ 0x00,        /* b */ 0x00,
+                /* c */ 0x00,        /* d */ 0x00,        /* e */ 0x00,        /* f */ 0x00
             );
+            const __m128i packValues1 = _mm_set_epi32(0x01400140, 0x01400140, 0x01400140, 0x01400140);
+            const __m128i packValues2 = _mm_set_epi32(0x00011000, 0x00011000, 0x00011000, 0x00011000);
+            const __m128i unshuffle_128 = _mm_setr_epi8(2, 1, 0, 6, 5, 4, 10, 9, 8, 14, 13, 12, -1, -1, -1, -1);
+            const __m128i write_mask_128 = _mm_set_epi32(0x00000000, 0xffffffff, 0xffffffff, 0xffffffff);
 
-            // 8-bit packed -> original order
-            const __m128i unshuffled = _mm_shuffle_epi8(packed, unshuffle_128);
+            for (size_t i = 0; i < loop_end; i += 16, dest_ptr += 12) {
+                // Load four sets of octets at once.
+                __m128i b = _mm_loadu_si128(reinterpret_cast<const __m128i*>(&source_data[i]));
 
-			// Output
-            _mm_maskmoveu_si128(
-				unshuffled,
-                write_mask_128,
-                reinterpret_cast<char*>(dest_ptr)
-            );
+                // Base64 characters -> 6-bit unpacked
+                const __m128i higher_nibble = _mm_and_si128(_mm_srli_epi32(b, 4), _0f_128);
+                const __m128i upper_bound = _mm_shuffle_epi8(upper_bound_LUT, higher_nibble);
+                const __m128i lower_bound = _mm_shuffle_epi8(lower_bound_LUT, higher_nibble);
+
+                const __m128i below = _mm_cmplt_epi8(b, lower_bound);
+                const __m128i above = _mm_cmpgt_epi8(b, upper_bound);
+                const __m128i eq_2f = _mm_cmpeq_epi8(b, _2f_128);
+
+                const __m128i shift  = _mm_shuffle_epi8(shiftLUT, higher_nibble);
+                const __m128i t0     = _mm_add_epi8(b, shift);
+                const __m128i unpacked = _mm_add_epi8(t0, _mm_and_si128(eq_2f, _n3_128));
+
+                // 6-bit unpacked -> 8-bit packed
+                const __m128i packed = _mm_madd_epi16(
+                    _mm_maddubs_epi16(unpacked, packValues1),
+                    packValues2
+                );
+
+                // 8-bit packed -> original order
+                const __m128i unshuffled = _mm_shuffle_epi8(packed, unshuffle_128);
+
+                // Output
+                _mm_maskmoveu_si128(
+                    unshuffled,
+                    write_mask_128,
+                    reinterpret_cast<char*>(dest_ptr)
+                );
+            }
         }
 
         size_t binary_remainder = binary_length - (loop_count * 12);
