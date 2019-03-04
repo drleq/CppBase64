@@ -1,5 +1,7 @@
 #include "Tests/CppUnitTestFramework.hpp"
 
+#include <chrono>
+
 namespace {
 	#define BASE64_USE_AVX2
 	#include "Base64.hpp"
@@ -74,6 +76,25 @@ namespace base64avx2_test {
                 "ZSBzaG9ydCB2ZWhlbWVuY2Ugb2YgYW55IGNhcm5hbCBwbGVhc3VyZS4"
             );
         }
+
+        SECTION("Benchmark") {
+            using namespace std::chrono;
+
+            auto start = high_resolution_clock::now();
+            for (int i = 0; i < 10000; ++i) {
+                TestEncode(
+                    "Man is distinguished, not only by his reason, but by this singular passion from "
+                    "other animals, which is a lust of the mind, that by a perseverance of delight "
+                    "in the continued and indefatigable generation of knowledge, exceeds the short "
+                    "vehemence of any carnal pleasure.",
+                    true
+                );
+            }
+            auto end = high_resolution_clock::now();
+
+            duration<double, std::milli> delta = end - start;
+            std::cout << delta.count() << "ms" << std::endl;
+        }
     }
 
     TEST_CASE(Base64AVX2Test, Decode) {
@@ -122,6 +143,25 @@ namespace base64avx2_test {
                 "in the continued and indefatigable generation of knowledge, exceeds the short "
                 "vehemence of any carnal pleasure."
             );
+        }
+
+        SECTION("Benchmark") {
+            using namespace std::chrono;
+
+            auto start = high_resolution_clock::now();
+            for (int i = 0; i < 10000; ++i) {
+                TestDecode(
+                    "TWFuIGlzIGRpc3Rpbmd1aXNoZWQsIG5vdCBvbmx5IGJ5IGhpcyByZWFzb24sIGJ1dCBieSB0aGlz"
+                    "IHNpbmd1bGFyIHBhc3Npb24gZnJvbSBvdGhlciBhbmltYWxzLCB3aGljaCBpcyBhIGx1c3Qgb2Yg"
+                    "dGhlIG1pbmQsIHRoYXQgYnkgYSBwZXJzZXZlcmFuY2Ugb2YgZGVsaWdodCBpbiB0aGUgY29udGlu"
+                    "dWVkIGFuZCBpbmRlZmF0aWdhYmxlIGdlbmVyYXRpb24gb2Yga25vd2xlZGdlLCBleGNlZWRzIHRo"
+                    "ZSBzaG9ydCB2ZWhlbWVuY2Ugb2YgYW55IGNhcm5hbCBwbGVhc3VyZS4"
+                );
+            }
+            auto end = high_resolution_clock::now();
+
+            duration<double, std::milli> delta = end - start;
+            std::cout << delta.count() << "ms" << std::endl;
         }
     }
 
