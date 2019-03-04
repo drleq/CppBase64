@@ -40,6 +40,7 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 add_executable(Tests
     Base64Test.cpp
     Base64SSSE3Test.cpp
+    Base64AVX2Test.cpp
     main.cpp
     ../Base64.hpp)
 
