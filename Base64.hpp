@@ -71,6 +71,8 @@ namespace base64 {
                 // Load four sets of octets at once.
                 // [????|dddc|ccbb|baaa]
                 __m128i b = _mm_loadu_si128(reinterpret_cast<const __m128i*>(&source_data[i]));
+
+                // [?ddd|?ccc|?bbb|?aaa]
                 b = _mm_shuffle_epi8(b, preshuffle_128);
 
                 // t0 = [0000cccc|CC000000|aaaaaa00|00000000]
@@ -124,8 +126,14 @@ namespace base64 {
             // Code based on work by Wojciech Muła
             // Ref: http://0x80.pl/notesen/2016-01-12-sse-base64-encoding.html
             const __m256i preshuffle_256 = _mm256_set_epi8(
-                22, 23, 21, 22, 19, 20, 18, 19, 16, 17, 15, 16, 13, 14, 12, 13,
-                10, 11,  9, 10,  7,  8,  6,  7,  4,  5,  3,  4,  1,  2,  0,  1
+                10, 11,  9, 10,
+                 7,  8,  6,  7,
+                 4,  5,  3,  4,
+                 1,  2,  0,  1,
+                10, 11,  9, 10,
+                 7,  8,  6,  7,
+                 4,  5,  3,  4,
+                 1,  2,  0,  1
             );
             const __m256i t0Mask   = _mm256_set1_epi32(0x0fc0fc00);
             const __m256i t1Values = _mm256_set1_epi32(0x04000040);
@@ -143,11 +151,18 @@ namespace base64 {
                 '/' - 63, 'A', 0, 0
             );
 
-            for (size_t i = 0; i < loop_end; i += 12, dest_ptr += 16) {
+            for (size_t i = 0; i < loop_end; i += 24, dest_ptr += 32) {
                 // Load eight sets of octets at once.
-                // [????|????|hhhg|ggff|feee|dddc|ccbb|baaa]
-                __m256i b = _mm256_loadu_si256(reinterpret_cast<const __m256i*>(&source_data[i]));
-                b = _mm256_shuffle_epi8(b, preshuffle_256);
+                // b_low  = [????|dddc|ccbb|baaa]
+                // b_high = [????|hhhg|ggff|feee]
+                __m128i b_low  = _mm_loadu_si128(reinterpret_cast<const __m128i*>(&source_data[i]));
+                __m128i b_high = _mm_loadu_si128(reinterpret_cast<const __m128i*>(&source_data[i+12]));
+                
+                // b = [?hhh|?ggg|?fff|?eee|?ddd|?ccc|?bbb|?aaa]
+                __m256i b = _mm256_shuffle_epi8(
+                    _mm256_set_m128i(b_high, b_low),
+                    preshuffle_256
+                );
 
                 // t0 = [0000cccc|CC000000|aaaaaa00|00000000]
                 // t1 = [00000000|00cccccc|00000000|00aaaaaa]
@@ -273,9 +288,19 @@ namespace base64 {
             const __m256i _0f_256 = _mm256_set1_epi8(0x0f);
             const __m256i _2f_256 = _mm256_set1_epi8(0x2f);
             const __m256i _n3_256 = _mm256_set1_epi8(-3);
-            const __m256i lower_bound_LUT = _mm256_setr_epi8(1, 1, 0x2b, 0x30, 0x41, 0x50, 0x61, 0x70, 1, 1, 1, 1, 1, 1, 1, 1);
-            const __m256i upper_bound_LUT = _mm256_setr_epi8(0, 0, 0x2b, 0x39, 0x4f, 0x5a, 0x6f, 0x7a, 0, 0, 0, 0, 0, 0, 0, 0);
+            const __m256i lower_bound_LUT = _mm256_setr_epi8(
+                1, 1, 0x2b, 0x30, 0x41, 0x50, 0x61, 0x70, 1, 1, 1, 1, 1, 1, 1, 1,
+                1, 1, 0x2b, 0x30, 0x41, 0x50, 0x61, 0x70, 1, 1, 1, 1, 1, 1, 1, 1
+            );
+            const __m256i upper_bound_LUT = _mm256_setr_epi8(
+                0, 0, 0x2b, 0x39, 0x4f, 0x5a, 0x6f, 0x7a, 0, 0, 0, 0, 0, 0, 0, 0,
+                0, 0, 0x2b, 0x39, 0x4f, 0x5a, 0x6f, 0x7a, 0, 0, 0, 0, 0, 0, 0, 0
+            );
             const __m256i shiftLUT = _mm256_setr_epi8(
+                /* 0 */ 0x00,        /* 1 */ 0x00,        /* 2 */ 0x3e - 0x2b, /* 3 */ 0x34 - 0x30,
+                /* 4 */ 0x00 - 0x41, /* 5 */ 0x0f - 0x50, /* 6 */ 0x1a - 0x61, /* 7 */ 0x29 - 0x70,
+                /* 8 */ 0x00,        /* 9 */ 0x00,        /* a */ 0x00,        /* b */ 0x00,
+                /* c */ 0x00,        /* d */ 0x00,        /* e */ 0x00,        /* f */ 0x00,
                 /* 0 */ 0x00,        /* 1 */ 0x00,        /* 2 */ 0x3e - 0x2b, /* 3 */ 0x34 - 0x30,
                 /* 4 */ 0x00 - 0x41, /* 5 */ 0x0f - 0x50, /* 6 */ 0x1a - 0x61, /* 7 */ 0x29 - 0x70,
                 /* 8 */ 0x00,        /* 9 */ 0x00,        /* a */ 0x00,        /* b */ 0x00,
@@ -283,12 +308,21 @@ namespace base64 {
             );
             const __m256i packValues1 = _mm256_set1_epi32(0x01400140);
             const __m256i packValues2 = _mm256_set1_epi32(0x00011000);
-            const __m256i unshuffle_256 = _mm256_setr_epi8(2, 1, 0, 6, 5, 4, 10, 9, 8, 14, 13, 12, -1, -1, -1, -1);
-            const __m256i write_mask_256 = _mm256_set_epi32(
-                0x00000000, 0x00000000, 0xffffffff, 0xffffffff, 0xffffffff, 0xffffffff, 0xffffffff, 0xffffffff
+            const __m256i unshuffle_256 = _mm256_setr_epi8(
+                 2,  1,  0,
+                 6,  5,  4,
+                10,  9,  8,
+                14, 13, 12,
+                -1, -1, -1, -1,
+                 2,  1,  0,
+                 6,  5,  4,
+                10,  9,  8,
+                14, 13, 12,
+                -1, -1, -1, -1
             );
+            const __m128i write_mask_128 = _mm_set_epi32(0x00000000, 0xffffffff, 0xffffffff, 0xffffffff);
 
-            for (size_t i = 0; i < loop_end; i += 16, dest_ptr += 12) {
+            for (size_t i = 0; i < loop_end; i += 32, dest_ptr += 24) {
                 // Load eight sets of octets at once.
                 __m256i b = _mm256_loadu_si256(reinterpret_cast<const __m256i*>(&source_data[i]));
 
@@ -315,10 +349,15 @@ namespace base64 {
                 const __m256i unshuffled = _mm256_shuffle_epi8(packed, unshuffle_256);
 
                 // Output
-                _mm256_maskmoveu_si256(
-                    unshuffled,
-                    write_mask_256,
+                _mm_maskmoveu_si128(
+                    _mm256_extracti128_si256(unshuffled, 0),
+                    write_mask_128,
                     reinterpret_cast<char*>(dest_ptr)
+                );
+                _mm_maskmoveu_si128(
+                    _mm256_extracti128_si256(unshuffled, 1),
+                    write_mask_128,
+                    reinterpret_cast<char*>(dest_ptr + 12)
                 );
             }
 
@@ -504,6 +543,9 @@ namespace base64 {
         size_t loop_end = 0;
 #ifdef BASE64_USE_SSSE3
         loop_end = detail::decode_bulk_ssse3(source_data, source_data_length, dest_ptr);
+#endif
+#ifdef BASE64_USE_AVX2
+        loop_end = detail::decode_bulk_avx2(source_data, source_data_length, dest_ptr);
 #endif
 
         size_t binary_remainder = dest_data_length - std::distance(dest_data, dest_ptr);
