@@ -270,9 +270,9 @@ namespace base64 {
 
             // Code based on work by Wojciech Muła
             // Ref: http://0x80.pl/notesen/2016-01-17-sse-base64-decoding.html
-            const __m256i _0f_128 = _mm256_set1_epi8(0x0f);
-            const __m256i _2f_128 = _mm256_set1_epi8(0x2f);
-            const __m256i _n3_128 = _mm256_set1_epi8(-3);
+            const __m256i _0f_256 = _mm256_set1_epi8(0x0f);
+            const __m256i _2f_256 = _mm256_set1_epi8(0x2f);
+            const __m256i _n3_256 = _mm256_set1_epi8(-3);
             const __m256i lower_bound_LUT = _mm256_setr_epi8(1, 1, 0x2b, 0x30, 0x41, 0x50, 0x61, 0x70, 1, 1, 1, 1, 1, 1, 1, 1);
             const __m256i upper_bound_LUT = _mm256_setr_epi8(0, 0, 0x2b, 0x39, 0x4f, 0x5a, 0x6f, 0x7a, 0, 0, 0, 0, 0, 0, 0, 0);
             const __m256i shiftLUT = _mm256_setr_epi8(
@@ -283,39 +283,41 @@ namespace base64 {
             );
             const __m256i packValues1 = _mm256_set1_epi32(0x01400140);
             const __m256i packValues2 = _mm256_set1_epi32(0x00011000);
-            const __m256i unshuffle_128 = _mm256_setr_epi8(2, 1, 0, 6, 5, 4, 10, 9, 8, 14, 13, 12, -1, -1, -1, -1);
-            const __m256i write_mask_128 = _mm256_set_epi32(0x00000000, 0x00000000, 0xffffffff, 0xffffffff, 0xffffffff, 0xffffffff, 0xffffffff, 0xffffffff);
+            const __m256i unshuffle_256 = _mm256_setr_epi8(2, 1, 0, 6, 5, 4, 10, 9, 8, 14, 13, 12, -1, -1, -1, -1);
+            const __m256i write_mask_256 = _mm256_set_epi32(
+                0x00000000, 0x00000000, 0xffffffff, 0xffffffff, 0xffffffff, 0xffffffff, 0xffffffff, 0xffffffff
+            );
 
             for (size_t i = 0; i < loop_end; i += 16, dest_ptr += 12) {
                 // Load eight sets of octets at once.
                 __m256i b = _mm256_loadu_si256(reinterpret_cast<const __m256i*>(&source_data[i]));
 
                 // Base64 characters -> 6-bit unpacked
-                const __m256i higher_nibble = _mm256_and_si256(_mm256_srli_epi32(b, 4), _0f_128);
+                const __m256i higher_nibble = _mm256_and_si256(_mm256_srli_epi32(b, 4), _0f_256);
                 const __m256i upper_bound = _mm256_shuffle_epi8(upper_bound_LUT, higher_nibble);
                 const __m256i lower_bound = _mm256_shuffle_epi8(lower_bound_LUT, higher_nibble);
 
                 const __m256i below = _mm256_cmpgt_epi8(lower_bound, b);
                 const __m256i above = _mm256_cmpgt_epi8(b, upper_bound);
-                const __m256i eq_2f = _mm256_cmpeq_epi8(b, _2f_128);
+                const __m256i eq_2f = _mm256_cmpeq_epi8(b, _2f_256);
 
                 const __m256i shift  = _mm256_shuffle_epi8(shiftLUT, higher_nibble);
                 const __m256i t0     = _mm256_add_epi8(b, shift);
-                const __m256i unpacked = _mm256_add_epi8(t0, _mm256_and_si256(eq_2f, _n3_128));
+                const __m256i unpacked = _mm256_add_epi8(t0, _mm256_and_si256(eq_2f, _n3_256));
 
                 // 6-bit unpacked -> 8-bit packed
-                const __m256i packed = _mm_madd_epi16(
-                    _mm_maddubs_epi16(unpacked, packValues1),
+                const __m256i packed = _mm256_madd_epi16(
+                    _mm256_maddubs_epi16(unpacked, packValues1),
                     packValues2
                 );
 
                 // 8-bit packed -> original order
-                const __m256i unshuffled = _mm_shuffle_epi8(packed, unshuffle_128);
+                const __m256i unshuffled = _mm256_shuffle_epi8(packed, unshuffle_256);
 
                 // Output
-                _mm_maskmoveu_si128(
+                _mm256_maskmoveu_si256(
                     unshuffled,
-                    write_mask_128,
+                    write_mask_256,
                     reinterpret_cast<char*>(dest_ptr)
                 );
             }
