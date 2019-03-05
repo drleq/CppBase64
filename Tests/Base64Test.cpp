@@ -80,7 +80,7 @@ namespace base64_test {
             using namespace std::chrono;
 
             auto start = high_resolution_clock::now();
-            for (int i = 0; i < 10000; ++i) {
+            for (int i = 0; i < 10000000; ++i) {
                 TestEncode(
                     "Man is distinguished, not only by his reason, but by this singular passion from "
                     "other animals, which is a lust of the mind, that by a perseverance of delight "
@@ -148,7 +148,7 @@ namespace base64_test {
             using namespace std::chrono;
 
             auto start = high_resolution_clock::now();
-            for (int i = 0; i < 10000; ++i) {
+            for (int i = 0; i < 10000000; ++i) {
                 TestDecode(
                     "TWFuIGlzIGRpc3Rpbmd1aXNoZWQsIG5vdCBvbmx5IGJ5IGhpcyByZWFzb24sIGJ1dCBieSB0aGlz"
                     "IHNpbmd1bGFyIHBhc3Npb24gZnJvbSBvdGhlciBhbmltYWxzLCB3aGljaCBpcyBhIGx1c3Qgb2Yg"

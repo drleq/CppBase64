@@ -208,10 +208,11 @@ namespace base64 {
             uint8_t*& dest_ptr
         ) {
             size_t loop_count = (source_data_length / 16);
-            if (loop_count == 0) {
+            if (loop_count <= 1) {
                 return 0;
             }
 
+			loop_count--;
             size_t loop_end = (loop_count * 16);
 
             // Code based on work by Wojciech Muła
@@ -230,7 +231,6 @@ namespace base64 {
             const __m128i packValues1 = _mm_set_epi32(0x01400140, 0x01400140, 0x01400140, 0x01400140);
             const __m128i packValues2 = _mm_set_epi32(0x00011000, 0x00011000, 0x00011000, 0x00011000);
             const __m128i unshuffle_128 = _mm_setr_epi8(2, 1, 0, 6, 5, 4, 10, 9, 8, 14, 13, 12, -1, -1, -1, -1);
-            const __m128i write_mask_128 = _mm_set_epi32(0x00000000, 0xffffffff, 0xffffffff, 0xffffffff);
 
             for (size_t i = 0; i < loop_end; i += 16, dest_ptr += 12) {
                 // Load four sets of octets at once.
@@ -259,11 +259,7 @@ namespace base64 {
                 const __m128i unshuffled = _mm_shuffle_epi8(packed, unshuffle_128);
 
                 // Output
-                _mm_maskmoveu_si128(
-                    unshuffled,
-                    write_mask_128,
-                    reinterpret_cast<char*>(dest_ptr)
-                );
+				_mm_storeu_si128(reinterpret_cast<__m128i*>(dest_ptr), unshuffled);
             }
 
             return loop_end;
@@ -277,10 +273,11 @@ namespace base64 {
             uint8_t*& dest_ptr
         ) {
             size_t loop_count = (source_data_length / 32);
-            if (loop_count == 0) {
+            if (loop_count <= 1) {
                 return 0;
             }
 
+			loop_count--;
             size_t loop_end = (loop_count * 32);
 
             // Code based on work by Wojciech Muła
@@ -320,7 +317,6 @@ namespace base64 {
                 14, 13, 12,
                 -1, -1, -1, -1
             );
-            const __m128i write_mask_128 = _mm_set_epi32(0x00000000, 0xffffffff, 0xffffffff, 0xffffffff);
 
             for (size_t i = 0; i < loop_end; i += 32, dest_ptr += 24) {
                 // Load eight sets of octets at once.
@@ -349,16 +345,14 @@ namespace base64 {
                 const __m256i unshuffled = _mm256_shuffle_epi8(packed, unshuffle_256);
 
                 // Output
-                _mm_maskmoveu_si128(
-                    _mm256_extracti128_si256(unshuffled, 0),
-                    write_mask_128,
-                    reinterpret_cast<char*>(dest_ptr)
-                );
-                _mm_maskmoveu_si128(
-                    _mm256_extracti128_si256(unshuffled, 1),
-                    write_mask_128,
-                    reinterpret_cast<char*>(dest_ptr + 12)
-                );
+				_mm_storeu_si128(
+					reinterpret_cast<__m128i*>(dest_ptr),
+					_mm256_extracti128_si256(unshuffled, 0)
+				);
+				_mm_storeu_si128(
+					reinterpret_cast<__m128i*>(dest_ptr+12),
+					_mm256_extracti128_si256(unshuffled, 1)
+				);
             }
 
             return loop_end;
