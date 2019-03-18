@@ -3,9 +3,10 @@
 #include <chrono>
 
 namespace {
+	#define BASE64_USE_AVX2
 	#include "Base64.hpp"
-	
-	struct Base64Test {
+
+    struct Base64AVX2Test {
         static std::string TestEncode(const std::string_view& str, bool padded) {
             return base64::encode_to_string(
                 reinterpret_cast<const uint8_t*>(str.data()),
@@ -23,9 +24,9 @@ namespace {
     };
 }
 
-namespace base64_test {
+namespace base64avx2_test {
 
-    TEST_CASE(Base64Test, Encode) {
+    TEST_CASE(Base64AVX2Test, Encode) {
         SECTION("Padded") {
             CHECK_EQUAL(TestEncode("", true), "");
             CHECK_EQUAL(TestEncode("f", true), "Zg==");
@@ -96,7 +97,7 @@ namespace base64_test {
         }
     }
 
-    TEST_CASE(Base64Test, Decode) {
+    TEST_CASE(Base64AVX2Test, Decode) {
         SECTION("Padded") {
             CHECK_EQUAL(TestDecode(""), "");
             CHECK_EQUAL(TestDecode("Zg=="), "f");
