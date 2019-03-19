@@ -4,13 +4,14 @@
 #include <chrono>
 
 namespace {
-    struct Base64SSSE3Test {
+
+    struct Base64AVX2Test {
         static std::string TestEncode(const std::string_view& str, bool padded) {
             return base64::encode_to_string(
                 reinterpret_cast<const uint8_t*>(str.data()),
                 str.size(),
                 padded,
-                base64::Codepath::SSSE3
+                base64::Codepath::AVX2
             );
         }
 
@@ -18,15 +19,15 @@ namespace {
             return base64::decode_to_string(
                 reinterpret_cast<const uint8_t*>(str.data()),
                 str.size(),
-                base64::Codepath::SSSE3
+                base64::Codepath::AVX2
             );
         }
     };
 }
 
-namespace base64ssse3_test {
+namespace base64avx2_test {
 
-    TEST_CASE(Base64SSSE3Test, Encode) {
+    TEST_CASE(Base64AVX2Test, Encode) {
         SECTION("Padded") {
             CHECK_EQUAL(TestEncode("", true), "");
             CHECK_EQUAL(TestEncode("f", true), "Zg==");
@@ -97,7 +98,7 @@ namespace base64ssse3_test {
         }
     }
 
-    TEST_CASE(Base64SSSE3Test, Decode) {
+    TEST_CASE(Base64AVX2Test, Decode) {
         SECTION("Padded") {
             CHECK_EQUAL(TestDecode(""), "");
             CHECK_EQUAL(TestDecode("Zg=="), "f");

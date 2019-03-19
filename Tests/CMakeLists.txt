@@ -23,6 +23,7 @@ if (${CMAKE_CXX_COMPILER_ID} STREQUAL GNU)
         -Wundef
         -Wno-missing-field-initializers # Allow implict zero initialization of structs
         -Werror        # Treat warnings as errors
+        -mavx          # Enable AVX
     )
 elseif(${CMAKE_CXX_COMPILER_ID} STREQUAL MSVC)
     add_compile_options(
@@ -40,6 +41,7 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 add_executable(Tests
     Base64Test.cpp
     Base64SSSE3Test.cpp
+    Base64AVX2Test.cpp
     main.cpp
     ../Base64.hpp)
 
