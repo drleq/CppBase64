@@ -10,14 +10,16 @@ namespace {
             return base64::encode_to_string(
                 reinterpret_cast<const uint8_t*>(str.data()),
                 str.size(),
-                padded
+                padded,
+                base64::Codepath::Basic
             );
         }
 
         static std::string TestDecode(const std::string_view& str) {
             return base64::decode_to_string(
                 reinterpret_cast<const uint8_t*>(str.data()),
-                str.size()
+                str.size(),
+                base64::Codepath::Basic
             );
         }
     };

@@ -12,7 +12,19 @@
 #include <tmmintrin.h>
 #include <immintrin.h>
 
+#include "CpuFeatures.hpp"
+
 namespace base64 {
+    enum class Codepath {
+        Auto = 0,
+        Basic = 1,
+        SSSE3 = 2,
+        AVX2 = 3
+    };
+
+    //--------------------------------------------------------------------------------------------------------
+    //--------------------------------------------------------------------------------------------------------
+    //--------------------------------------------------------------------------------------------------------
 
     namespace detail {
         // Static look-up table for 6-bit values to 8-bit base64 characters.  All values are valid.
@@ -38,6 +50,18 @@ namespace base64 {
              0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0, // 0xE0 - 0xEF
              0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0  // 0xF0 - 0xFF
         };
+
+        inline Codepath get_auto_codepath() {
+            using namespace cpu_features;
+            auto features = get_features();
+            if (features & Features::AVX2) {
+                return Codepath::AVX2;
+            }
+            if (features & Features::SSSE3) {
+                return Codepath::SSSE3;
+            }
+            return Codepath::Basic;
+        }
 
         //----------------------------------------------------------------------------------------------------
         //----------------------------------------------------------------------------------------------------
@@ -203,6 +227,27 @@ namespace base64 {
         }
 
         //----------------------------------------------------------------------------------------------------
+
+        inline size_t encode_bulk(
+            const uint8_t* source_data,
+            const size_t source_data_length,
+            uint8_t*& dest_ptr,
+            Codepath codepath = Codepath::Auto
+        ) {
+            if (codepath == Codepath::Auto) {
+                static auto auto_codepath = get_auto_codepath();
+                codepath = auto_codepath;
+            }
+
+            switch (codepath) {
+            case Codepath::SSSE3: return encode_bulk_ssse3(source_data, source_data_length, dest_ptr);
+            case Codepath::AVX2: return encode_bulk_avx2(source_data, source_data_length, dest_ptr);
+            default:
+            case Codepath::Basic: return 0;
+            }
+        }
+
+        //----------------------------------------------------------------------------------------------------
         //----------------------------------------------------------------------------------------------------
         //----------------------------------------------------------------------------------------------------
 
@@ -341,6 +386,27 @@ namespace base64 {
 
             return loop_end;
         }
+
+        //----------------------------------------------------------------------------------------------------
+
+        inline size_t decode_bulk(
+            const uint8_t* source_data,
+            const size_t source_data_length,
+            uint8_t*& dest_ptr,
+            Codepath codepath = Codepath::Auto
+        ) {
+            if (codepath == Codepath::Auto) {
+                static auto auto_codepath = get_auto_codepath();
+                codepath = auto_codepath;
+            }
+
+            switch (codepath) {
+            case Codepath::SSSE3: return decode_bulk_ssse3(source_data, source_data_length, dest_ptr);
+            case Codepath::AVX2: return decode_bulk_avx2(source_data, source_data_length, dest_ptr);
+            default:
+            case Codepath::Basic: return 0;
+            }
+        }
     }
 
     //--------------------------------------------------------------------------------------------------------
@@ -395,22 +461,16 @@ namespace base64 {
         const size_t source_data_length,
         uint8_t* dest_data,
         const size_t dest_data_length,
-        bool padded = true
+        bool padded = true,
+        Codepath codepath = Codepath::Auto
     ) {
         if (get_encoded_length(source_data_length, padded) != dest_data_length) {
             throw std::logic_error("Dest buffer is incorrect size");
         }
 
-        auto dest_ptr = dest_data;
-        size_t loop_end = 0;
-
         // Use bulk vectorized encoding for as much data as possible.
-#ifdef BASE64_USE_SSSE3
-        loop_end = detail::encode_bulk_ssse3(source_data, source_data_length, dest_ptr);
-#endif
-#ifdef BASE64_USE_AVX2
-        loop_end = detail::encode_bulk_avx2(source_data, source_data_length, dest_ptr);
-#endif
+        auto dest_ptr = dest_data;
+        size_t loop_end = detail::encode_bulk(source_data, source_data_length, dest_ptr, codepath);
 
         size_t remainder = source_data_length - loop_end;
         size_t octet_count = (remainder / 3);
@@ -460,7 +520,8 @@ namespace base64 {
     inline std::string encode_to_string(
         const uint8_t* source_data,
         const size_t source_data_length,
-        bool padded = true
+        bool padded = true,
+        Codepath codepath = Codepath::Auto
     ) {
         std::string str(
             get_encoded_length(source_data_length, padded),
@@ -472,7 +533,8 @@ namespace base64 {
             source_data_length,
             reinterpret_cast<uint8_t*>(str.data()),
             str.size(),
-            padded
+            padded,
+            codepath
         );
 
         return str;
@@ -485,7 +547,8 @@ namespace base64 {
     inline std::vector<uint8_t> encode_to_byte_vector(
         const uint8_t* source_data,
         const size_t source_data_length,
-        bool padded = true
+        bool padded = true,
+        Codepath codepath = Codepath::Auto
     ) {
         std::vector<uint8_t> buf;
         buf.resize(get_encoded_length(source_data_length, padded));
@@ -495,7 +558,8 @@ namespace base64 {
             source_data_length,
             buf.data(),
             buf.size(),
-            padded
+            padded,
+            codepath
         );
 
         return buf;
@@ -509,7 +573,8 @@ namespace base64 {
         const uint8_t* source_data,
         const size_t source_data_length,
         uint8_t* dest_data,
-        const size_t dest_data_length
+        const size_t dest_data_length,
+        Codepath codepath = Codepath::Auto
     ) {
         size_t binary_length = get_decoded_length(source_data, source_data_length);
         if (binary_length != dest_data_length) {
@@ -517,13 +582,7 @@ namespace base64 {
         }
 
         auto dest_ptr = dest_data;
-        size_t loop_end = 0;
-#ifdef BASE64_USE_SSSE3
-        loop_end = detail::decode_bulk_ssse3(source_data, source_data_length, dest_ptr);
-#endif
-#ifdef BASE64_USE_AVX2
-        loop_end = detail::decode_bulk_avx2(source_data, source_data_length, dest_ptr);
-#endif
+        size_t loop_end = detail::decode_bulk(source_data, source_data_length, dest_ptr, codepath);
 
         size_t binary_remainder = dest_data_length - std::distance(dest_data, dest_ptr);
         size_t octet_count = binary_remainder / 3;
@@ -564,7 +623,8 @@ namespace base64 {
     // Helper to decode directly to a std::string.
     inline std::string decode_to_string(
         const uint8_t* source_data,
-        const size_t source_data_length
+        const size_t source_data_length,
+        Codepath codepath = Codepath::Auto
     ) {
         std::string str(get_decoded_length(source_data, source_data_length), '\0');
 
@@ -572,7 +632,8 @@ namespace base64 {
             source_data,
             source_data_length,
             reinterpret_cast<uint8_t*>(str.data()),
-            str.size()
+            str.size(),
+            codepath
         );
 
         return str;
@@ -584,7 +645,8 @@ namespace base64 {
     // need to initialize the buffer before decoding.
     inline std::vector<uint8_t> decode_to_vector(
         const uint8_t* source_data,
-        const size_t source_data_length
+        const size_t source_data_length,
+        Codepath codepath = Codepath::Auto
     ) {
         std::vector<uint8_t> buf;
         buf.resize(get_decoded_length(source_data, source_data_length));
@@ -593,7 +655,8 @@ namespace base64 {
             source_data,
             source_data_length,
             buf.data(),
-            buf.size()
+            buf.size(),
+            codepath
         );
 
         return buf;

@@ -1,24 +1,24 @@
 #include "Tests/CppUnitTestFramework.hpp"
 
+#include "Base64.hpp"
 #include <chrono>
 
 namespace {
-	#define BASE64_USE_SSSE3
-	#include "Base64.hpp"
-
     struct Base64SSSE3Test {
         static std::string TestEncode(const std::string_view& str, bool padded) {
             return base64::encode_to_string(
                 reinterpret_cast<const uint8_t*>(str.data()),
                 str.size(),
-                padded
+                padded,
+                base64::Codepath::SSSE3
             );
         }
 
         static std::string TestDecode(const std::string_view& str) {
             return base64::decode_to_string(
                 reinterpret_cast<const uint8_t*>(str.data()),
-                str.size()
+                str.size(),
+                base64::Codepath::SSSE3
             );
         }
     };
