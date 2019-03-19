@@ -1,10 +1,9 @@
 #include "Tests/CppUnitTestFramework.hpp"
 
+#include "Base64.hpp"
 #include <chrono>
 
 namespace {
-	#include "Base64.hpp"
-	
 	struct Base64Test {
         static std::string TestEncode(const std::string_view& str, bool padded) {
             return base64::encode_to_string(
