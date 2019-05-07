@@ -478,9 +478,9 @@ namespace base64 {
 
         // Process three source values at a time.
         for (size_t i = loop_end; i < octet_end; i += 3, dest_ptr += 4) {
-            char b0 = source_data[i  ];
-            char b1 = source_data[i+1];
-            char b2 = source_data[i+2];
+            uint8_t b0 = source_data[i  ];
+            uint8_t b1 = source_data[i+1];
+            uint8_t b2 = source_data[i+2];
 
             dest_ptr[0] = detail::Base64LUT[b0 >> 2];
             dest_ptr[1] = detail::Base64LUT[(b0 & 0x03) << 4 | b1 >> 4];
